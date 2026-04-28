@@ -30,11 +30,12 @@ class GameController:
         self.selectedCell = None
         self.errorCells = set()
     
-    def start_new_game(self, difficulty='medium'):
+    def start_new_game(self, difficulty='medium', resetTimer=True):
         """
         开始新游戏
         参数:
             difficulty: 难度级别
+            resetTimer: 是否重置计时（新游戏时为True，继续下一关时为False）
         """
         # 生成新关卡
         puzzleData = self.generator.generate_puzzle_with_solution(difficulty)
@@ -47,8 +48,25 @@ class GameController:
         
         # 重置游戏状态
         self.currentLevel += 1
-        self.startTime = time.time()
-        self.elapsedTime = 0
+        
+        # 根据参数决定是否重置计时
+        if resetTimer:
+            self.startTime = time.time()
+            self.elapsedTime = 0
+        else:
+            # 继续下一关时，保持累计计时，只更新 startTime
+            # 先保存当前已用时间（不依赖 isGameActive 状态）
+            if self.startTime is not None:
+                # 直接根据 startTime 计算时间差并累加
+                # 这样无论 isGameActive 是什么状态，都能正确累加时间
+                currentTime = time.time()
+                timeDelta = currentTime - self.startTime
+                # 确保时间差是正数（避免系统时间调整导致的问题）
+                if timeDelta > 0:
+                    self.elapsedTime += timeDelta
+            # 更新 startTime 为当前时间，用于计算下一关卡的时间
+            self.startTime = time.time()
+        
         self.isGameActive = True
         self.isAnswerShown = False
         self.selectedCell = None
@@ -78,8 +96,11 @@ class GameController:
         暂停游戏
         """
         if self.isGameActive and not self.isPaused:
-            # 记录当前已用时间
-            self.elapsedTime = time.time() - self.startTime
+            # 将当前关卡已用时间累加到 elapsedTime
+            if self.startTime is not None:
+                timeDelta = time.time() - self.startTime
+                if timeDelta > 0:
+                    self.elapsedTime += timeDelta
             self.isPaused = True
     
     def resume_game(self):
@@ -87,8 +108,9 @@ class GameController:
         继续游戏
         """
         if self.isGameActive and self.isPaused:
-            # 重新设置开始时间，扣除已用时间
-            self.startTime = time.time() - self.elapsedTime
+            # 重新设置开始时间为当前时间
+            # elapsedTime 已经包含了暂停前的累计时间
+            self.startTime = time.time()
             self.isPaused = False
     
     def select_cell(self, row, col):
@@ -135,6 +157,38 @@ class GameController:
             # 清除数字时移除错误标记
             if (row, col) in self.errorCells:
                 self.errorCells.remove((row, col))
+    
+    def increment_number(self):
+        """
+        递增当前选中单元格的数字（用于鼠标点击递增）
+        返回:
+            bool: 是否成功递增数字
+        """
+        if not self.isGameActive or self.isAnswerShown:
+            return False
+        
+        if self.selectedCell is None:
+            return False
+        
+        row, col = self.selectedCell
+        
+        # 检查是否是初始给定的数字（不可修改）
+        if self.initialPuzzle[row][col] != 0:
+            return False
+        
+        # 获取当前数字并递增
+        currentNum = self.playerBoard[row][col]
+        # 递增逻辑：0 -> 1, 1 -> 2, ..., 9 -> 1
+        if currentNum == 0:
+            newNum = 1
+        elif currentNum == 9:
+            newNum = 1
+        else:
+            newNum = currentNum + 1
+        
+        # 输入新数字
+        self.input_number(newNum)
+        return True
     
     def check_completion(self):
         """
@@ -209,12 +263,15 @@ class GameController:
     
     def get_elapsed_time(self):
         """
-        获取已用时间
+        获取已用时间（累计时间 + 当前关卡已用时间）
         返回:
             float: 已用时间（秒）
         """
         if self.isGameActive and not self.isPaused and self.startTime is not None:
-            self.elapsedTime = time.time() - self.startTime
+            # 返回累计时间 + 当前关卡已用时间
+            # 注意：不覆盖 elapsedTime，它专门用来保存各关卡的累计时间
+            return self.elapsedTime + (time.time() - self.startTime)
+        # 暂停或游戏结束时，直接返回累计时间
         return self.elapsedTime
     
     def is_board_full(self):

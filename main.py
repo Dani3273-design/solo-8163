@@ -1,6 +1,7 @@
 import pygame
 import sys
 import os
+import random
 
 # 添加kernel目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,6 +20,7 @@ class SudokuGame:
     def __init__(self):
         # 初始化Pygame
         pygame.init()
+        pygame.mixer.init()
         
         # 游戏设置
         self.screenWidth = 600
@@ -51,6 +53,10 @@ class SudokuGame:
         self.buttonHeight = 40
         self.buttonY = self.gridOffsetY + 9 * self.cellSize + 30
         
+        # 音效系统
+        self.sounds = []
+        self._init_sounds()
+        
         # 按钮定义
         self.newGameButton = {
             'x': 100,
@@ -81,6 +87,72 @@ class SudokuGame:
         
         # 开始新游戏
         self.start_new_game()
+    
+    def _init_sounds(self):
+        """
+        初始化音效系统，创建3个不同的简单音效
+        """
+        try:
+            sampleRate = 44100
+            duration = 0.1
+            
+            # 音效1：高音
+            freq1 = 880
+            sound1 = self._create_tone(freq1, duration, sampleRate)
+            self.sounds.append(sound1)
+            
+            # 音效2：中音
+            freq2 = 660
+            sound2 = self._create_tone(freq2, duration, sampleRate)
+            self.sounds.append(sound2)
+            
+            # 音效3：低音
+            freq3 = 523
+            sound3 = self._create_tone(freq3, duration, sampleRate)
+            self.sounds.append(sound3)
+            
+        except Exception as e:
+            print(f"音效初始化失败: {e}")
+            self.sounds = []
+    
+    def _create_tone(self, frequency, duration, sampleRate):
+        """
+        创建一个简单的音调音效
+        参数:
+            frequency: 频率 (Hz)
+            duration: 持续时间 (秒)
+            sampleRate: 采样率
+        返回:
+            pygame.Sound 对象
+        """
+        import numpy as np
+        
+        nSamples = int(round(duration * sampleRate))
+        buf = np.zeros((nSamples, 2), dtype=np.int16)
+        
+        maxSample = 2**15 - 1
+        volume = 0.3
+        
+        for i in range(nSamples):
+            t = float(i) / sampleRate
+            value = int(maxSample * volume * np.sin(2 * np.pi * frequency * t))
+            buf[i][0] = value
+            buf[i][1] = value
+        
+        sound = pygame.sndarray.make_sound(buf)
+        sound.set_volume(0.5)
+        return sound
+    
+    def _play_random_sound(self):
+        """
+        随机播放一个音效
+        """
+        if self.sounds:
+            soundIndex = random.randint(0, len(self.sounds) - 1)
+            try:
+                self.sounds[soundIndex].play()
+            except:
+                pass
     
     def start_new_game(self):
         """
@@ -162,8 +234,8 @@ class SudokuGame:
             self.draw()
             pygame.time.delay(500)  # 短暂延迟让用户看到准备下一关状态
             
-            # 开始新关卡
-            self.gameController.start_new_game('medium')
+            # 开始新关卡（不重置计时，保持累计时间）
+            self.gameController.start_new_game('medium', resetTimer=False)
             self.isPaused = False
             self.message = '游戏开始！请填写数独。'
             self.messageTimer = 120
@@ -241,7 +313,20 @@ class SudokuGame:
                 # 如果游戏暂停，点击棋盘则继续游戏
                 if self.isPaused:
                     self.toggle_pause()
-                self.gameController.select_cell(row, col)
+                
+                # 检查是否点击的是同一个已激活的单元格
+                currentSelected = self.gameController.selectedCell
+                if currentSelected == (row, col):
+                    # 同一个单元格，递增数字
+                    success = self.gameController.increment_number()
+                    if success:
+                        # 播放随机音效
+                        self._play_random_sound()
+                        # 检查棋盘是否填满
+                        self.check_board_full_and_validate()
+                else:
+                    # 新单元格，激活选中
+                    self.gameController.select_cell(row, col)
     
     def handle_key_press(self, key):
         """
